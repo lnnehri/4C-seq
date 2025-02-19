@@ -4,11 +4,14 @@ if (!requireNamespace("BiocManager", quietly = TRUE))
 BiocManager::install("Basic4Cseq")
 BiocManager::install("ShortRead")
 BiocManager::install("Biostrings")
+BiocManager::install("Rsubread")
+
 
 library(Basic4Cseq)
-library(ShortRead)v
+library(ShortRead)
 library(Biostrings)
 library(R.utils)
+library(Rsubread)
 
 # Klasör yolunu belirtelim
 fastq_folder <- "C:/Users/lnerk/OneDrive/Desktop/acikdta"
@@ -348,8 +351,94 @@ library(Rsubread)
 
 buildindex(basename = "GRCh38_index",
            reference = "C:/Users/lnerk/OneDrive/Desktop/Homo_sapiens.GRCh38.dna.primary_assembly.fa")
+#yukaridaki kod asiri yavas calisti ram'i komlpe tikadi. 
 
-#lenovoda RAM sorunu oldu indexlerken. o yuzden Mac'e gectim ama Mac'te de Rstudio error verip duruyor. Terminalden acmam gerekiyor surekli. 
-#Rstudio'yu terminalden acmak icin su line girilecek Mac'te zorla aciyorsun ama bunu default yapamadim:  arch -arm64 /Applications/RStudio.app/Contents/MacOS/RStudio
+buildindex(basename = "GRCh38_index",
+           reference = "C:/Users/lnerk/OneDrive/Desktop/Homo_sapiens.GRCh38.dna.primary_assembly.fa",
+           memory = 4000)  # Maksimum 4GB RAM kullanır
+
+#bu da olmadi. OF
+list.files("C:/Users/lnerk/OneDrive/Desktop/", pattern = "GRCh38")
+
+buildindex(basename = "GRCh38_index",
+           reference = "C:/Users/lnerk/OneDrive/Desktop/Homo_sapiens.GRCh38.dna.primary_assembly.fa",
+           memory = 2000)  # RAM kullanımını 2GB’a düşürüyoruz
+#yukaridaki de olmadi, split index ile yapiyorum bu sefer. LA HAVLE. Mac'te de Rstudio calismiyor. 
+#asagidaki oldu:
+buildindex(basename = "GRCh38_index",
+           reference = "C:/Users/lnerk/OneDrive/Desktop/Homo_sapiens.GRCh38.dna.primary_assembly.fa",
+           memory = 2000,  # RAM kullanımını 2GB ile sınırlıyoruz
+           indexSplit = TRUE,  # Büyük genomları küçük parçalara ayırarak indeksleme yapar
+           gappedIndex = TRUE)  # Bellek kullanımını azaltır, ancak süreç biraz daha uzun sürebilir
+
+
+list.files("C:/Users/lnerk/OneDrive/Belgeler/", pattern = "GRCh38_index")
+
+# Rsubread paketini yükle
+library(Rsubread)
+
+trimmed_files <- list.files("C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/", 
+                            pattern = "_trimmed.fastq$", full.names = TRUE)
+
+
+# Output BAM dosya isimlerini oluştur
+output_bams <- gsub("_trimmed.fastq$", "_aligned.bam", trimmed_files)
+
+
+# Alignment işlemini başlat
+align(index = index_base,           
+      readfile1 = trimmed_files,    
+      output_file = output_bams,    
+      type = "dna",                 
+      PE = TRUE,                    
+      nthreads = 4,                 
+      indels = 5,                   
+      maxMismatches = 3,            
+      unique = TRUE)                
+
+list.files("C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/", pattern = "_aligned.bam$")
+
+library(Rsamtools)
+# Aligned BAM dosyalarını al
+bam_files <- list.files("C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/", 
+                        pattern = "_aligned.bam$", full.names = TRUE)
+
+# Çıktı dosyalarının adlarını belirle (".bam" yerine "_sorted.bam" ekleniyor)
+sorted_bam_files <- gsub("_aligned.bam$", "_sorted.bam", bam_files)
+
+# BAM dosyalarını sırala
+for (i in seq_along(bam_files)) {
+  sortBam(file = bam_files[i], destination = sorted_bam_files[i])
+}
+
+
+list.files("C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/", pattern = "_sorted.bam$")
+# Eski dosya adlarını al
+old_files <- list.files("C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/", 
+                        pattern = "_sorted.bam.bam$", full.names = TRUE)
+
+# Yeni dosya adlarını oluştur
+new_files <- gsub(".bam.bam$", ".bam", old_files)
+
+# Dosyaları yeniden adlandır
+file.rename(from = old_files, to = new_files)
+
+list.files("C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/", pattern = "_sorted.bam$")
+
+# Dosyaların tam yolunu al
+sorted_bams <- list.files("C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/", 
+                          pattern = "_sorted.bam$", full.names = TRUE)
+
+# Her bir BAM dosyası için indeksleme yap
+for (bam_file in sorted_bams) {
+  indexBam(bam_file)
+}
+
+list.files("C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/", pattern = ".bai$")
+
+# Uretilmis dosyalar klasorde. 
+
+###################################################################################
+
 
 
