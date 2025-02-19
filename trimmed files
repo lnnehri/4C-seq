@@ -6,7 +6,7 @@ BiocManager::install("ShortRead")
 BiocManager::install("Biostrings")
 
 library(Basic4Cseq)
-library(ShortRead)
+library(ShortRead)v
 library(Biostrings)
 library(R.utils)
 
@@ -348,3 +348,8 @@ library(Rsubread)
 
 buildindex(basename = "GRCh38_index",
            reference = "C:/Users/lnerk/OneDrive/Desktop/Homo_sapiens.GRCh38.dna.primary_assembly.fa")
+
+#lenovoda RAM sorunu oldu indexlerken. o yuzden Mac'e gectim ama Mac'te de Rstudio error verip duruyor. Terminalden acmam gerekiyor surekli. 
+#Rstudio'yu terminalden acmak icin su line girilecek Mac'te zorla aciyorsun ama bunu default yapamadim:  arch -arm64 /Applications/RStudio.app/Contents/MacOS/RStudio
+
+
