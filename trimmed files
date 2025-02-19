@@ -1,0 +1,350 @@
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+
+BiocManager::install("Basic4Cseq")
+BiocManager::install("ShortRead")
+BiocManager::install("Biostrings")
+
+library(Basic4Cseq)
+library(ShortRead)
+library(Biostrings)
+library(R.utils)
+
+# Klasör yolunu belirtelim
+fastq_folder <- "C:/Users/lnerk/OneDrive/Desktop/acikdta"
+
+# Klasördeki tüm .txt uzantılı dosyaları listeleyelim
+fastq_files <- list.files(path = fastq_folder, pattern = "*.txt", full.names = TRUE)
+
+# Tüm dosyaları okuyalım ve bir listeye kaydedelim
+fastq_list <- lapply(fastq_files, readFastq)
+
+# Liste içeriğini kontrol edelim (ilk dosyanın başlıklarını görelim)
+head(id(fastq_list[[1]]))
+fastq_files
+
+#ilk birkac satiri gormek / kontrol etmek icin:|
+readLines(fastq_files[1], n = 10)
+
+#tum dosyalara kalite kontrolu yapmak
+# Tüm dosyalara kalite kontrolü uygula
+qc_results <- lapply(fastq_files, qa)
+
+# İlk dosyanın kalite skorlarını göster (kontrol için)
+head(qc_results[[1]][["readQualityScore"]])
+
+# Kalite filtresi uygulama fonksiyonu
+filter_quality <- function(fastq_obj, threshold = 20) {
+  qual_scores <- quality(fastq_obj)  # Kalite skorlarını al
+  mean_scores <- rowMeans(as(qual_scores, "matrix"))  # Okuma başına ortalama kalite
+  fastq_obj[mean_scores >= threshold]  # Yüksek kaliteli okumaları seç
+}
+
+# Tüm dosyalara Phred ≥ 20 filtresi uygula
+filtered_fastq_list <- lapply(fastq_list, filter_quality, threshold = 20)
+
+# İlk dosyanın filtrelenmiş okuma sayısını kontrol edelim
+length(filtered_fastq_list[[1]])
+length(fastq_list[[1]])  # Orijinal okuma sayısı
+
+#treshold 30 yapsaydm ne kadarini kaybederdim?
+filtered_30_test <- filter_quality(fastq_list[[1]], threshold = 30)
+
+# Phred 30 filtresi sonrası okuma sayısını kontrol et
+length(filtered_30_test)
+#Phred 20 (%0.04 kayıp) → Daha fazla veri, yeterli kalite
+#Phred 30 (%22 kayıp) → Çok sıkı, gereksiz veri kaybı
+# Yeni klasör yolu
+output_folder <- "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter"
+
+# Yeni dosya yollarını oluştur
+output_files <- file.path(output_folder, gsub(".txt", "_filtered.fastq", basename(fastq_files)))
+
+# Filtrelenmiş dosyaları kaydet
+mapply(writeFastq, filtered_fastq_list, output_files, MoreArgs = list(compress = FALSE))
+
+#filtrelenmis olanlardan ne kadar atti ona bakiyorum her sample icin:
+# Orijinal ve filtrelenmiş okuma sayılarını al
+original_counts <- sapply(fastq_list, length)
+filtered_counts <- sapply(filtered_fastq_list, length)
+
+# Karşılaştırma tablosu oluştur
+qc_comparison <- data.frame(
+  File = basename(fastq_files),
+  Original_Reads = original_counts,
+  Filtered_Reads = filtered_counts,
+  Reads_Removed = original_counts - filtered_counts,
+  Percentage_Removed = round((original_counts - filtered_counts) / original_counts * 100, 2)
+)
+
+# Tabloyu görüntüle
+print(qc_comparison)
+
+# Kaydedilecek dosya yolu
+output_comparison_file <- "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/qc_comparison.csv"
+
+# CSV olarak kaydet
+write.csv(qc_comparison, output_comparison_file, row.names = FALSE)
+
+# Kaydedildiğini kontrol et
+file.exists(output_comparison_file)
+
+#paired end mi yoksa single end mi?
+
+paired_files <- data.frame(
+  File_1 = qc_comparison$File[grep("_1_sequence", qc_comparison$File)],
+  File_2 = qc_comparison$File[grep("_2_sequence", qc_comparison$File)]
+)
+
+print(paired_files)
+
+#####en bastan yukluyorum simdi
+# Yeni klasör yolunu belirleyelim
+filtered_folder <- "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter"
+
+# Klasördeki tüm .fastq veya .txt uzantılı dosyaları listeleyelim
+filtered_files <- list.files(path = filtered_folder, pattern = "*.fastq|*.txt", full.names = TRUE)
+
+# Tüm filtrelenmiş dosyaları tekrar okuyalım
+filtered_fastq_list <- lapply(filtered_files, readFastq)
+
+# Yüklenen dosyaları kontrol edelim
+print(filtered_files)
+length(filtered_fastq_list)
+
+# İlk çiftin dosya yollarını al
+file_1 <- filtered_files[grep("_1_sequence_filtered.fastq", filtered_files)][1]
+file_2 <- filtered_files[grep("_2_sequence_filtered.fastq", filtered_files)][1]
+
+# Satır sayılarını al
+length_1 <- length(readLines(file_1))
+length_2 <- length(readLines(file_2))
+
+# Sonuçları yazdır
+print(c(File_1 = length_1, File_2 = length_2))
+
+#bunlari quality controle verdigim icin esit cikmadi, orijinal dosyadan bir bakayim:
+
+# İlk çiftin dosya yollarını al
+file_1 <- fastq_files[grep("_1_sequence.txt", fastq_files)][1]
+file_2 <- fastq_files[grep("_2_sequence.txt", fastq_files)][1]
+
+# Satır sayılarını al
+length_1 <- length(readLines(file_1))
+length_2 <- length(readLines(file_2))
+
+# Sonuçları yazdır
+print(c(File_1 = length_1, File_2 = length_2))
+
+# Okuma sayısına bölerek kıyaslayalım
+print(c(File_1_reads = length_1 / 4, File_2_reads = length_2 / 4))
+
+#tum ciftler icin bir baksin
+# _1 ve _2 dosyalarını eşleştirerek karşılaştırma yapalım
+paired_files <- data.frame(
+  File_1 = fastq_files[grep("_1_sequence.txt", fastq_files)],
+  File_2 = fastq_files[grep("_2_sequence.txt", fastq_files)]
+)
+
+# Tüm çiftler için satır sayılarını ve okuma sayılarını al
+comparison_results <- data.frame(File_1 = paired_files$File_1, File_2 = paired_files$File_2,
+                                 File_1_Lines = sapply(paired_files$File_1, function(f) length(readLines(f))),
+                                 File_2_Lines = sapply(paired_files$File_2, function(f) length(readLines(f))),
+                                 File_1_Reads = sapply(paired_files$File_1, function(f) length(readLines(f)) / 4),
+                                 File_2_Reads = sapply(paired_files$File_2, function(f) length(readLines(f)) / 4))
+
+# Sonuçları yazdır
+print(comparison_results)
+# Kaydedilecek dosya yolu
+output_comparison_file <- "C:/Users/lnerk/OneDrive/Desktop/acikdta/original_qc_comparison.csv"
+
+# CSV olarak kaydet
+write.csv(comparison_results, output_comparison_file, row.names = FALSE)
+
+# Kaydedildiğini kontrol et
+file.exists(output_comparison_file)
+
+
+# GC içeriğini hesaplama fonksiyonu
+calculate_gc_content <- function(fastq_obj) {
+  sequences <- sread(fastq_obj)  # FASTQ'daki sekansları al
+  gc_counts <- letterFrequency(sequences, letters = c("G", "C"), as.prob = TRUE)  # GC yüzdesini hesapla
+  mean(gc_counts[,1] + gc_counts[,2]) * 100  # Ortalama GC yüzdesi
+}
+
+# Her dosya için GC içeriğini hesapla
+gc_content_list <- sapply(filtered_fastq_list, calculate_gc_content)
+
+# Sonuçları bir tabloya çevir
+gc_content_df <- data.frame(
+  File = basename(filtered_files),
+  GC_Content = gc_content_list
+)
+
+# GC içeriği sonuçlarını yazdır
+print(gc_content_df)
+
+# Kaydedilecek dosya yolu
+output_gc_file <- "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/gc_content_results.csv"
+
+# CSV olarak kaydet
+write.csv(gc_content_df, output_gc_file, row.names = FALSE)
+
+# Kaydedildiğini kontrol et
+file.exists(output_gc_file)
+
+#trimming
+# Aramak istediğimiz sekanslar (TAM LİSTE)
+adapter_sequences <- c(
+  "GAAATGCATATTAGAGGTCAGGC", "ACTCTAGAATCACAACAGCTGAA",
+  "CAAGCAGAAGACGGCATACGAGATTCGCCTTAGTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG",
+  "CAAGCAGAAGACGGCATACGAGATCTAGTACGGTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG",
+  "CAAGCAGAAGACGGCATACGAGATTTCTGCCTGTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG",
+  "CAAGCAGAAGACGGCATACGAGATGCTCAGGAGTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG",
+  "CAAGCAGAAGACGGCATACGAGATAGGAGTCCGTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG",
+  "CAAGCAGAAGACGGCATACGAGATCATGCCTAGTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG",
+  "CAAGCAGAAGACGGCATACGAGATGTAGAGAGGTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG",
+  "CAAGCAGAAGACGGCATACGAGATCCTCTCTGGTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG",
+  "CAAGCAGAAGACGGCATACGAGATAGCGTAGCGTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG",
+  "CAAGCAGAAGACGGCATACGAGATCAGCCTCGGTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG",
+  "CAAGCAGAAGACGGCATACGAGATTGCCTCTTGTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG",
+  "CAAGCAGAAGACGGCATACGAGATTCCTCTACGTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG",
+  "AATGATACGGCGACCACCGAGATCTACACGTAAGGAGTCGTCGGCAGCGTCAGATGTGTATAAGAGACAG",
+  "CAAGCAGAAGACGGCATACGAGATTCGCCTTAGTCTCGTGGGCTCGGAGATGTGTATAAGAGACAGGAAATGCATATTAGAGGTCAGGC",
+  "CAAGCAGAAGACGGCATACGAGATCTAGTACGGTCTCGTGGGCTCGGAGATGTGTATAAGAGACAGGAAATGCATATTAGAGGTCAGGC",
+  "CAAGCAGAAGACGGCATACGAGATTTCTGCCTGTCTCGTGGGCTCGGAGATGTGTATAAGAGACAGGAAATGCATATTAGAGGTCAGGC",
+  "CAAGCAGAAGACGGCATACGAGATGCTCAGGAGTCTCGTGGGCTCGGAGATGTGTATAAGAGACAGGAAATGCATATTAGAGGTCAGGC",
+  "CAAGCAGAAGACGGCATACGAGATAGGAGTCCGTCTCGTGGGCTCGGAGATGTGTATAAGAGACAGGAAATGCATATTAGAGGTCAGGC",
+  "CAAGCAGAAGACGGCATACGAGATCATGCCTAGTCTCGTGGGCTCGGAGATGTGTATAAGAGACAGGAAATGCATATTAGAGGTCAGGC",
+  "CAAGCAGAAGACGGCATACGAGATGTAGAGAGGTCTCGTGGGCTCGGAGATGTGTATAAGAGACAGGAAATGCATATTAGAGGTCAGGC",
+  "CAAGCAGAAGACGGCATACGAGATCCTCTCTGGTCTCGTGGGCTCGGAGATGTGTATAAGAGACAGGAAATGCATATTAGAGGTCAGGC",
+  "CAAGCAGAAGACGGCATACGAGATAGCGTAGCGTCTCGTGGGCTCGGAGATGTGTATAAGAGACAGGAAATGCATATTAGAGGTCAGGC",
+  "CAAGCAGAAGACGGCATACGAGATCAGCCTCGGTCTCGTGGGCTCGGAGATGTGTATAAGAGACAGGAAATGCATATTAGAGGTCAGGC",
+  "CAAGCAGAAGACGGCATACGAGATTGCCTCTTGTCTCGTGGGCTCGGAGATGTGTATAAGAGACAGGAAATGCATATTAGAGGTCAGGC",
+  "CAAGCAGAAGACGGCATACGAGATTCCTCTACGTCTCGTGGGCTCGGAGATGTGTATAAGAGACAGGAAATGCATATTAGAGGTCAGGC",
+  "AATGATACGGCGACCACCGAGATCTACACGTAAGGAGTCGTCGGCAGCGTCAGATGTGTATAAGAGACAGACTCTAGAATCACAACAGCTGAA"
+)
+# Fonksiyon: Sekansların dosyada olup olmadığını kontrol eder
+check_sequences_in_fastq <- function(fastq_file, sequences) {
+  fastq_reads <- readFastq(fastq_file)
+  sequences_present <- sapply(sequences, function(seq) {
+    any(grepl(seq, sread(fastq_reads)))  # Sekans varsa TRUE, yoksa FALSE
+  })
+  return(sequences_present)
+}
+# Tüm dosyalar için analizi çalıştır
+results_list <- lapply(filtered_files, check_sequences_in_fastq, sequences = adapter_sequences)
+
+#buradan sonrasini run etmedim, cikmam lazim, sen run edersin:
+
+# Sonuçları bir veri çerçevesine dönüştür
+results_df <- as.data.frame(do.call(rbind, results_list))
+rownames(results_df) <- basename(filtered_files)
+colnames(results_df) <- adapter_sequences
+
+# Sonuçları yazdır
+print(results_df)
+# Kaydedilecek dosya yolu
+output_adapter_file <- "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/adapter_check_results.csv"
+
+# CSV olarak kaydet
+write.csv(results_df, output_adapter_file, row.names = TRUE)
+
+trim_adapters <- function(fastq_file, adapter_sequences) {
+  fq <- readFastq(fastq_file)  # FASTQ dosyasını oku
+  fq_reads <- sread(fq)  # Okuma dizilerini al
+  fq_quality <- quality(fq)  # Kalite skorlarını al
+  
+  # Adaptörleri temizle
+  for (adapter in adapter_sequences) {
+    fq_reads <- trimLRPatterns(Lpattern = DNAString(adapter), subject = fq_reads)
+  }
+  
+  # Trimlenmiş okuma uzunluklarını al
+  new_lengths <- width(fq_reads)
+  
+  # Kalite skorlarını da aynı uzunluklara kısalt
+  fq_quality <- narrow(fq_quality, start = 1, end = new_lengths)
+  
+  # Yeni FASTQ dosyasını oluştur
+  trimmed_fq <- ShortReadQ(fq_reads, fq_quality, id(fq))
+  output_file <- gsub("_filtered\\.fastq$", "_trimmed.fastq", fastq_file)
+  writeFastq(trimmed_fq, output_file)
+  
+  message("Trimmed file saved: ", output_file)
+}
+# **Test etmek için bir tek dosyaya trimming yap**
+test_file <- "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1HT29Rep1_1_sequence_filtered.fastq"
+
+adapter_list <- c("GAAATGCATATTAGAGGTCAGGC", "ACTCTAGAATCACAACAGCTGAA")
+trim_adapters(test_file, adapter_list)
+
+filtered_files <- c(
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1HT29Rep1_1_sequence_filtered.fastq",
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1HT29Rep1_2_sequence_filtered.fastq",
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1HT29Rep2_1_sequence_filtered.fastq",
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1HT29Rep2_2_sequence_filtered.fastq",
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1SW480Rep1_1_sequence_filtered.fastq",
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1SW480Rep1_2_sequence_filtered.fastq",
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1SW480Rep2_1_sequence_filtered.fastq",
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1SW480Rep2_2_sequence_filtered.fastq",
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1SW620CPTRep1_1_sequence_filtered.fastq",
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1SW620CPTRep1_2_sequence_filtered.fastq",
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1SW620CPTRep2_1_sequence_filtered.fastq",
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1SW620CPTRep2_2_sequence_filtered.fastq",
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1SW620Rep1_1_sequence_filtered.fastq",
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1SW620Rep1_2_sequence_filtered.fastq",
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1SW620Rep2_1_sequence_filtered.fastq",
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1SW620Rep2_2_sequence_filtered.fastq"
+)
+# Tüm dosyalar için trimming uygula
+for (file in filtered_files) {
+  output_file <- gsub("_filtered\\.fastq$", "_trimmed.fastq", file)  # Çıkış dosya adı
+  
+  # Eğer dosya zaten varsa siliyoruz
+  if (file.exists(output_file)) {
+    file.remove(output_file)
+  }
+  
+  trim_adapters(file, adapter_list)
+}
+
+trimmed_files <- c(
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1HT29Rep1_1_sequence_trimmed.fastq",
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1HT29Rep1_2_sequence_trimmed.fastq",
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1HT29Rep2_1_sequence_trimmed.fastq",
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1HT29Rep2_2_sequence_trimmed.fastq",
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1SW480Rep1_1_sequence_trimmed.fastq",
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1SW480Rep1_2_sequence_trimmed.fastq",
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1SW480Rep2_1_sequence_trimmed.fastq",
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1SW480Rep2_2_sequence_trimmed.fastq",
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1SW620CPTRep1_1_sequence_trimmed.fastq",
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1SW620CPTRep1_2_sequence_trimmed.fastq",
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1SW620CPTRep2_1_sequence_trimmed.fastq",
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1SW620CPTRep2_2_sequence_trimmed.fastq",
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1SW620Rep1_1_sequence_trimmed.fastq",
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1SW620Rep1_2_sequence_trimmed.fastq",
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1SW620Rep2_1_sequence_trimmed.fastq",
+  "C:/Users/lnerk/OneDrive/Desktop/acikdta_filter/000000000-LN5H2_Akincilar_4Cseq_25s000139-1-1_AKINCILAR_lane1SW620Rep2_2_sequence_trimmed.fastq"
+)
+
+# QA analizi yap ve sonucu sakla
+trimmed_qa_results <- qa(trimmed_files, type="fastq")
+
+# Sonuçları görüntüle
+trimmed_qa_results
+trimmed_qa_results[["readCounts"]]
+trimmed_qa_results[["readCounts"]]
+trimmed_qa_results[["adapterContamination"]]
+
+#veriler temiz gorunuyor.
+# https://ftp.ensembl.org/pub/release-110/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz
+
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+BiocManager::install("Rsubread")
+
+library(Rsubread)
+
+buildindex(basename = "GRCh38_index",
+           reference = "C:/Users/lnerk/OneDrive/Desktop/Homo_sapiens.GRCh38.dna.primary_assembly.fa")
